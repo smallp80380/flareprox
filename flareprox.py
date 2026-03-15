@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 
 class FlareProxError(Exception):
     """Custom exception for FlareProx-specific errors."""
+
     pass
 
 
@@ -31,7 +32,7 @@ class CloudflareManager:
         self.base_url = "https://api.cloudflare.com/client/v4"
         self.headers = {
             "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         self._account_subdomain = None
 
@@ -39,7 +40,9 @@ class CloudflareManager:
         """Generate a subdomain name for new accounts."""
         # Use first 10 chars of account ID + 3 random chars
         account_prefix = self.account_id[:10].lower()
-        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
+        random_suffix = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=3)
+        )
         return f"{account_prefix}-{random_suffix}"
 
     def ensure_subdomain_provisioned(self) -> str:
@@ -65,7 +68,7 @@ class CloudflareManager:
                 url,
                 headers=self.headers,
                 json={"subdomain": subdomain_name},
-                timeout=30
+                timeout=30,
             )
 
             if response.status_code == 200:
@@ -92,15 +95,17 @@ class CloudflareManager:
             else:
                 error_data = response.json() if response.content else {}
                 errors = error_data.get("errors", [])
-                error_msg = errors[0].get("message", "Unknown error") if errors else "Unknown error"
+                error_msg = (
+                    errors[0].get("message", "Unknown error")
+                    if errors
+                    else "Unknown error"
+                )
                 raise FlareProxError(
                     f"Failed to provision workers.dev subdomain (HTTP {response.status_code}): {error_msg}. "
                     "Please ensure your API token has 'Workers Scripts:Write' permission."
                 )
         except requests.RequestException as e:
-            raise FlareProxError(
-                f"Network error while provisioning subdomain: {e}"
-            )
+            raise FlareProxError(f"Network error while provisioning subdomain: {e}")
 
     @property
     def worker_subdomain(self) -> str:
@@ -134,13 +139,15 @@ class CloudflareManager:
                 elif response.status_code == 404:
                     # Subdomain not provisioned yet - try to provision it automatically
                     if attempt == 0:
-                        print("\n  ⚙ Setting up workers.dev subdomain for your account...")
+                        print(
+                            "\n  ⚙ Setting up workers.dev subdomain for your account..."
+                        )
                         try:
                             subdomain = self.ensure_subdomain_provisioned()
                             if subdomain:
                                 self._account_subdomain = subdomain
                                 return subdomain
-                        except FlareProxError as e:
+                        except FlareProxError:
                             # If provisioning fails, retry with GET in next attempt
                             if attempt < max_retries - 1:
                                 time.sleep(2)
@@ -174,12 +181,12 @@ class CloudflareManager:
     def _generate_worker_name(self) -> str:
         """Generate a unique worker name."""
         timestamp = str(int(time.time()))
-        random_suffix = ''.join(random.choices(string.ascii_lowercase, k=6))
+        random_suffix = "".join(random.choices(string.ascii_lowercase, k=6))
         return f"flareprox-{timestamp}-{random_suffix}"
 
     def _get_worker_script(self) -> str:
         """Return the optimized Cloudflare Worker script."""
-        return '''/**
+        return """/**
  * FlareProx - Cloudflare Worker URL Redirection Script
  */
 addEventListener('fetch', event => {
@@ -266,8 +273,6 @@ function createProxyRequest(request, targetURL) {
     }
   }
 
-  proxyHeaders.set('Host', targetURL.hostname)
-
   // Set X-Forwarded-For header
   const customXForwardedFor = request.headers.get('X-My-X-Forwarded-For')
   if (customXForwardedFor) {
@@ -288,7 +293,7 @@ function createProxyResponse(response, requestMethod) {
 
   // Copy response headers (excluding problematic ones)
   for (const [key, value] of response.headers) {
-    if (!['content-encoding', 'content-length', 'transfer-encoding'].includes(key.toLowerCase())) {
+    if (!['content-length', 'transfer-encoding'].includes(key.toLowerCase())) {
       responseHeaders.set(key, value)
     }
   }
@@ -318,7 +323,7 @@ function createErrorResponse(error, details, status) {
 
 function generateRandomIP() {
   return [1, 2, 3, 4].map(() => Math.floor(Math.random() * 255) + 1).join('.')
-}'''
+}"""
 
     def create_deployment(self, name: Optional[str] = None) -> Dict:
         """Deploy a new Cloudflare Worker."""
@@ -329,11 +334,11 @@ function generateRandomIP() {
         url = f"{self.base_url}/accounts/{self.account_id}/workers/scripts/{name}"
 
         files = {
-            'metadata': (None, json.dumps({
-                "body_part": "script",
-                "main_module": "worker.js"
-            })),
-            'script': ('worker.js', script_content, 'application/javascript')
+            "metadata": (
+                None,
+                json.dumps({"body_part": "script", "main_module": "worker.js"}),
+            ),
+            "script": ("worker.js", script_content, "application/javascript"),
         }
 
         headers = {"Authorization": f"Bearer {self.api_token}"}
@@ -353,7 +358,12 @@ function generateRandomIP() {
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = requests.post(subdomain_url, headers=self.headers, json={"enabled": True}, timeout=30)
+                response = requests.post(
+                    subdomain_url,
+                    headers=self.headers,
+                    json={"enabled": True},
+                    timeout=30,
+                )
                 if response.status_code in [200, 201]:
                     break  # Success!
                 elif attempt < max_retries - 1:
@@ -361,10 +371,14 @@ function generateRandomIP() {
                     time.sleep(5)
                 else:
                     # Last attempt failed
-                    print(f"  ⚠ Could not enable worker on subdomain (HTTP {response.status_code})")
+                    print(
+                        f"  ⚠ Could not enable worker on subdomain (HTTP {response.status_code})"
+                    )
                     error_data = response.json() if response.content else {}
                     if error_data.get("errors"):
-                        print(f"     Error: {error_data['errors'][0].get('message', 'Unknown')}")
+                        print(
+                            f"     Error: {error_data['errors'][0].get('message', 'Unknown')}"
+                        )
             except requests.RequestException as e:
                 if attempt < max_retries - 1:
                     time.sleep(5)
@@ -376,8 +390,8 @@ function generateRandomIP() {
         return {
             "name": name,
             "url": worker_url,
-            "created_at": time.strftime('%Y-%m-%d %H:%M:%S'),
-            "id": worker_data.get("result", {}).get("id", name)
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "id": worker_data.get("result", {}).get("id", name),
         }
 
     def list_deployments(self) -> List[Dict]:
@@ -396,15 +410,19 @@ function generateRandomIP() {
         for script in data.get("result", []):
             name = script.get("id", "")
             if name.startswith("flareprox-"):
-                workers.append({
-                    "name": name,
-                    "url": f"https://{name}.{self.worker_subdomain}.workers.dev",
-                    "created_at": script.get("created_on", "unknown")
-                })
+                workers.append(
+                    {
+                        "name": name,
+                        "url": f"https://{name}.{self.worker_subdomain}.workers.dev",
+                        "created_at": script.get("created_on", "unknown"),
+                    }
+                )
 
         return workers
 
-    def wait_for_worker_ready(self, worker_url: str, worker_name: str, max_wait_seconds: int = 600) -> bool:
+    def wait_for_worker_ready(
+        self, worker_url: str, worker_name: str, max_wait_seconds: int = 600
+    ) -> bool:
         """
         Wait for a worker to be fully provisioned and accessible.
 
@@ -416,13 +434,12 @@ function generateRandomIP() {
         Returns:
             True if worker becomes ready, False if timeout
         """
-        import sys
 
         start_time = time.time()
         attempt = 0
         check_interval = 2  # Check every 2 seconds
 
-        spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         spinner_idx = 0
 
         while time.time() - start_time < max_wait_seconds:
@@ -443,7 +460,7 @@ function generateRandomIP() {
 
             # Show spinner animation
             elapsed = int(time.time() - start_time)
-            msg = f'\r     {spinner[spinner_idx % len(spinner)]} Waiting for worker to be ready... ({elapsed}s)'
+            msg = f"\r     {spinner[spinner_idx % len(spinner)]} Waiting for worker to be ready... ({elapsed}s)"
             sys.stdout.write(msg)
             sys.stdout.flush()
             spinner_idx += 1
@@ -453,15 +470,17 @@ function generateRandomIP() {
 
             # Check if we've exceeded max wait time
             if time.time() - start_time >= max_wait_seconds:
-                sys.stdout.write('\r' + ' ' * 100 + '\r')  # Clear line
+                sys.stdout.write("\r" + " " * 100 + "\r")  # Clear line
                 sys.stdout.flush()
                 return False
 
-        sys.stdout.write('\r' + ' ' * 80 + '\r')  # Clear line
+        sys.stdout.write("\r" + " " * 80 + "\r")  # Clear line
         sys.stdout.flush()
         return False
 
-    def test_deployment(self, deployment_url: str, target_url: str, method: str = "GET") -> Dict:
+    def test_deployment(
+        self, deployment_url: str, target_url: str, method: str = "GET"
+    ) -> Dict:
         """Test a deployment endpoint."""
         test_url = f"{deployment_url}?url={target_url}"
 
@@ -471,13 +490,10 @@ function generateRandomIP() {
                 "success": True,
                 "status_code": response.status_code,
                 "response_length": len(response.content),
-                "headers": dict(response.headers)
+                "headers": dict(response.headers),
             }
         except requests.RequestException as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
     def delete_workers(self, worker_names: List[str]) -> Dict[str, bool]:
         """
@@ -507,10 +523,12 @@ function generateRandomIP() {
         workers = self.list_deployments()
 
         if not workers:
-            print(f"  • No workers to delete")
+            print("  • No workers to delete")
             return
 
-        print(f"  Deleting {len(workers)} worker{'s' if len(workers) != 1 else ''}...\n")
+        print(
+            f"  Deleting {len(workers)} worker{'s' if len(workers) != 1 else ''}...\n"
+        )
 
         deleted_count = 0
         failed_count = 0
@@ -525,7 +543,7 @@ function generateRandomIP() {
                 else:
                     print(f"  ✗ [{i}/{len(workers)}] Failed: {worker['name']}")
                     failed_count += 1
-            except requests.RequestException as e:
+            except requests.RequestException:
                 print(f"  ✗ [{i}/{len(workers)}] Error: {worker['name']}")
                 failed_count += 1
 
@@ -553,7 +571,7 @@ class FlareProx:
         default_configs = [
             "flareprox.json",
             "cloudproxy.json",  # Legacy support
-            os.path.expanduser("~/.flareprox.json")
+            os.path.expanduser("~/.flareprox.json"),
         ]
 
         for default_config in default_configs:
@@ -566,7 +584,7 @@ class FlareProx:
     def _load_config_file(self, config_path: str, config: Dict) -> Dict:
         """Load configuration from a JSON file."""
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 file_config = json.load(f)
 
             if "cloudflare" in file_config and not config["cloudflare"]:
@@ -586,7 +604,7 @@ class FlareProx:
             return CloudflareManager(
                 api_token=api_token,
                 account_id=account_id,
-                zone_id=cf_config.get("zone_id")
+                zone_id=cf_config.get("zone_id"),
             )
         return None
 
@@ -610,7 +628,7 @@ class FlareProx:
     def _save_endpoints(self, endpoints: List[Dict]) -> None:
         """Save endpoints to local file."""
         try:
-            with open(self.endpoints_file, 'w') as f:
+            with open(self.endpoints_file, "w") as f:
                 json.dump(endpoints, f, indent=2)
         except IOError as e:
             print(f"Warning: Could not save endpoints: {e}")
@@ -619,9 +637,9 @@ class FlareProx:
         """Load endpoints from local file."""
         if os.path.exists(self.endpoints_file):
             try:
-                with open(self.endpoints_file, 'r') as f:
+                with open(self.endpoints_file, "r") as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except json.JSONDecodeError, IOError:
                 pass
         return []
 
@@ -654,33 +672,34 @@ class FlareProx:
             try:
                 endpoint = self.cloudflare.create_deployment()
                 results["created"].append(endpoint)
-                print(f"\n  ✓ Worker {i+1}/{count} created")
+                print(f"\n  ✓ Worker {i + 1}/{count} created")
                 print(f"    Name: {endpoint['name']}")
                 print(f"    URL:  {endpoint['url']}")
             except FlareProxError as e:
-                print(f"\n  ✗ Worker {i+1}/{count} failed: {e}")
+                print(f"\n  ✗ Worker {i + 1}/{count} failed: {e}")
                 results["failed"] += 1
 
         # Step 2: Wait for workers to be provisioned
         if results["created"]:
             print(f"\n{'-' * 70}")
-            print(f"Provisioning {len(results['created'])} worker{'s' if len(results['created']) != 1 else ''} - (can take 5+ mins on first run)")
+            print(
+                f"Provisioning {len(results['created'])} worker{'s' if len(results['created']) != 1 else ''} - (can take 5+ mins on first run)"
+            )
             print(f"{'-' * 70}")
 
             provisioned = []
             for i, endpoint in enumerate(results["created"]):
-                print(f"\n  [{i+1}/{len(results['created'])}] {endpoint['name']}")
+                print(f"\n  [{i + 1}/{len(results['created'])}] {endpoint['name']}")
 
                 is_ready = self.cloudflare.wait_for_worker_ready(
-                    endpoint['url'],
-                    endpoint['name']
+                    endpoint["url"], endpoint["name"]
                 )
 
                 if is_ready:
-                    print(f"     ✓ Ready!")
+                    print("     ✓ Ready!")
                     provisioned.append(endpoint)
                 else:
-                    print(f"     ✗ Timeout - worker may still be provisioning")
+                    print("     ✗ Timeout - worker may still be provisioning")
                     results["failed"] += 1
 
             # Update results to only include successfully provisioned workers
@@ -693,10 +712,12 @@ class FlareProx:
         print(f"\n{'=' * 70}")
         total_created = len(results["created"])
         if total_created > 0:
-            print(f"✓ Successfully created {total_created} worker{'s' if total_created != 1 else ''}")
+            print(
+                f"✓ Successfully created {total_created} worker{'s' if total_created != 1 else ''}"
+            )
             for endpoint in results["created"]:
                 print(f"  • {endpoint['url']}")
-        if results['failed'] > 0:
+        if results["failed"] > 0:
             print(f"✗ Failed: {results['failed']}")
         print(f"{'=' * 70}\n")
 
@@ -708,7 +729,7 @@ class FlareProx:
 
         if not endpoints:
             print(f"\n{'=' * 70}")
-            print(f"FlareProx Endpoints")
+            print("FlareProx Endpoints")
             print(f"{'=' * 70}")
             print("\n  No FlareProx endpoints found")
             print("  Create some with: python3 flareprox.py create\n")
@@ -723,18 +744,19 @@ class FlareProx:
             url = endpoint.get("url", "unknown")
             print(f"  {i}. {name}")
             print(f"     URL: {url}")
-            print(f"     Status: Active\n")
+            print("     Status: Active\n")
 
         return endpoints
 
-
-    def test_proxies(self, target_url: str = "https://ifconfig.me/ip", method: str = "GET") -> Dict:
+    def test_proxies(
+        self, target_url: str = "https://ifconfig.me/ip", method: str = "GET"
+    ) -> Dict:
         """Test proxy endpoints and show IP addresses."""
         endpoints = self._load_endpoints()
 
         if not endpoints:
             print(f"\n{'=' * 70}")
-            print(f"Test FlareProx Endpoints")
+            print("Test FlareProx Endpoints")
             print(f"{'=' * 70}")
             print("\n  No proxy endpoints available. Create some first.\n")
             return {"success": False, "error": "No endpoints available"}
@@ -744,7 +766,9 @@ class FlareProx:
         ip_to_workers = {}  # Track which workers have which IPs
 
         print(f"\n{'=' * 70}")
-        print(f"Testing {len(endpoints)} FlareProx endpoint{'s' if len(endpoints) != 1 else ''}")
+        print(
+            f"Testing {len(endpoints)} FlareProx endpoint{'s' if len(endpoints) != 1 else ''}"
+        )
         print(f"{'=' * 70}")
         print(f"\n  Target URL: {target_url}")
         print(f"  Method: {method}\n")
@@ -774,22 +798,27 @@ class FlareProx:
                         "success": response.status_code == 200,
                         "status_code": response.status_code,
                         "response_length": len(response.content),
-                        "headers": dict(response.headers)
+                        "headers": dict(response.headers),
                     }
 
                     if response.status_code == 200:
                         success = True
-                        print(f"     ✓ Request successful (Status: {result['status_code']})")
+                        print(
+                            f"     ✓ Request successful (Status: {result['status_code']})"
+                        )
 
                         # Try to extract and show IP address from response
                         try:
                             response_text = response.text.strip()
-                            if target_url in ["https://ifconfig.me/ip", "https://httpbin.org/ip"]:
+                            if target_url in [
+                                "https://ifconfig.me/ip",
+                                "https://httpbin.org/ip",
+                            ]:
                                 if target_url == "https://httpbin.org/ip":
                                     # httpbin returns JSON
                                     data = response.json()
-                                    if 'origin' in data:
-                                        worker_ip = data['origin']
+                                    if "origin" in data:
+                                        worker_ip = data["origin"]
                                         print(f"       IP: {worker_ip}")
                                 else:
                                     # ifconfig.me returns plain text IP
@@ -797,9 +826,13 @@ class FlareProx:
                                         worker_ip = response_text
                                         print(f"       IP: {worker_ip}")
                                     else:
-                                        print(f"       Response: {response_text[:100]}...")
+                                        print(
+                                            f"       Response: {response_text[:100]}..."
+                                        )
                             else:
-                                print(f"       Response Length: {result['response_length']} bytes")
+                                print(
+                                    f"       Response Length: {result['response_length']} bytes"
+                                )
 
                             # Track IP to worker mapping
                             if worker_ip:
@@ -807,14 +840,18 @@ class FlareProx:
                                     ip_to_workers[worker_ip] = []
                                 ip_to_workers[worker_ip].append(name)
 
-                        except Exception as e:
-                            print(f"       Response Length: {result['response_length']} bytes")
+                        except Exception:
+                            print(
+                                f"       Response Length: {result['response_length']} bytes"
+                            )
 
                         successful += 1
                         break  # Success, no need to retry
 
                     elif response.status_code == 503:
-                        print(f"     ✗ Server unavailable (503) - target service may be overloaded")
+                        print(
+                            "     ✗ Server unavailable (503) - target service may be overloaded"
+                        )
                         if attempt < max_retries - 1:
                             continue  # Retry
                     else:
@@ -823,7 +860,7 @@ class FlareProx:
 
                 except requests.RequestException as e:
                     if attempt < max_retries - 1:
-                        print(f"     ✗ Connection error, retrying...")
+                        print("     ✗ Connection error, retrying...")
                         continue
                     else:
                         print(f"     ✗ Request failed: {e}")
@@ -834,12 +871,14 @@ class FlareProx:
                     result = {"success": False, "error": str(e)}
                     break
 
-            results[name] = result if result else {"success": False, "error": "Unknown error"}
+            results[name] = (
+                result if result else {"success": False, "error": "Unknown error"}
+            )
 
         # Display results
         unique_ips = set(ip_to_workers.keys())
         print(f"\n{'-' * 70}")
-        print(f"Test Summary")
+        print("Test Summary")
         print(f"{'-' * 70}\n")
         print(f"  ✓ Working: {successful}/{len(endpoints)}")
         if successful < len(endpoints):
@@ -862,9 +901,11 @@ class FlareProx:
 
         if duplicates_to_remove:
             print(f"\n{'=' * 70}")
-            print(f"Duplicate IPs - IPs can change, deletion is not always necessary")
+            print("Duplicate IPs - IPs can change, deletion is not always necessary")
             print(f"{'=' * 70}")
-            print(f"\nFound {len(duplicates_to_remove)} worker(s) with duplicate IP addresses:")
+            print(
+                f"\nFound {len(duplicates_to_remove)} worker(s) with duplicate IP addresses:"
+            )
 
             for ip, workers in ip_to_workers.items():
                 if len(workers) > 1:
@@ -873,16 +914,28 @@ class FlareProx:
                     for dup in workers[1:]:
                         print(f"    Remove: {dup}")
 
-            print(f"\n{len(set(ip_to_workers.keys()))} unique IP(s) would remain after cleanup.")
+            print(
+                f"\n{len(set(ip_to_workers.keys()))} unique IP(s) would remain after cleanup."
+            )
 
             # Prompt user
             try:
-                choice = input(f"\nDelete {len(duplicates_to_remove)} duplicate worker(s)? (y/N): ").lower().strip()
-                if choice == 'y':
+                choice = (
+                    input(
+                        f"\nDelete {len(duplicates_to_remove)} duplicate worker(s)? (y/N): "
+                    )
+                    .lower()
+                    .strip()
+                )
+                if choice == "y":
                     print(f"\nDeleting {len(duplicates_to_remove)} worker(s)...")
-                    delete_results = self.cloudflare.delete_workers(duplicates_to_remove)
+                    delete_results = self.cloudflare.delete_workers(
+                        duplicates_to_remove
+                    )
 
-                    deleted_count = sum(1 for success in delete_results.values() if success)
+                    deleted_count = sum(
+                        1 for success in delete_results.values() if success
+                    )
                     failed_count = len(duplicates_to_remove) - deleted_count
 
                     for name, success in delete_results.items():
@@ -913,7 +966,7 @@ class FlareProx:
 
         try:
             self.cloudflare.cleanup_all()
-            print(f"\n  ✓ All endpoints deleted successfully")
+            print("\n  ✓ All endpoints deleted successfully")
         except FlareProxError as e:
             print(f"\n  ✗ Failed to cleanup: {e}")
 
@@ -921,7 +974,7 @@ class FlareProx:
         if os.path.exists(self.endpoints_file):
             try:
                 os.remove(self.endpoints_file)
-                print(f"  ✓ Local cache cleared\n")
+                print("  ✓ Local cache cleared\n")
             except OSError:
                 pass
 
@@ -929,7 +982,7 @@ class FlareProx:
 def setup_interactive_config() -> bool:
     """Interactive setup for Cloudflare credentials."""
     print(f"\n{'=' * 70}")
-    print(f"FlareProx Setup - Cloudflare Credentials")
+    print("FlareProx Setup - Cloudflare Credentials")
     print(f"{'=' * 70}\n")
     print("  Getting Cloudflare Credentials:\n")
     print("  1. Sign up at https://cloudflare.com")
@@ -953,23 +1006,18 @@ def setup_interactive_config() -> bool:
         return False
 
     # Create config
-    config = {
-        "cloudflare": {
-            "api_token": api_token,
-            "account_id": account_id
-        }
-    }
+    config = {"cloudflare": {"api_token": api_token, "account_id": account_id}}
 
     # Save config file (overwrite if exists)
     config_path = "flareprox.json"
     try:
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
         print(f"\n{'=' * 70}")
-        print(f"✓ Configuration Saved")
+        print("✓ Configuration Saved")
         print(f"{'=' * 70}\n")
         print(f"  Config file: {config_path}")
-        print(f"  FlareProx is now configured and ready to use!\n")
+        print("  FlareProx is now configured and ready to use!\n")
         return True
     except IOError as e:
         print(f"\n  ✗ Error saving configuration: {e}\n")
@@ -978,15 +1026,22 @@ def setup_interactive_config() -> bool:
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser."""
-    parser = argparse.ArgumentParser(description="FlareProx - Simple URL Redirection via Cloudflare Workers")
+    parser = argparse.ArgumentParser(
+        description="FlareProx - Simple URL Redirection via Cloudflare Workers"
+    )
 
-    parser.add_argument("command", nargs='?',
-                       choices=["create", "list", "test", "cleanup", "help", "config"],
-                       help="Command to execute")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["create", "list", "test", "cleanup", "help", "config"],
+        help="Command to execute",
+    )
 
     parser.add_argument("--url", help="Target URL")
     parser.add_argument("--method", default="GET", help="HTTP method (default: GET)")
-    parser.add_argument("--count", type=int, default=1, help="Number of proxies to create (default: 1)")
+    parser.add_argument(
+        "--count", type=int, default=1, help="Number of proxies to create (default: 1)"
+    )
     parser.add_argument("--config", help="Configuration file path")
 
     return parser
@@ -995,31 +1050,31 @@ def create_argument_parser() -> argparse.ArgumentParser:
 def show_help_message() -> None:
     """Display the main help message."""
     print(f"\n{'=' * 70}")
-    print(f"FlareProx - Simple URL Redirection via Cloudflare Workers")
+    print("FlareProx - Simple URL Redirection via Cloudflare Workers")
     print(f"{'=' * 70}\n")
-    print(f"  Usage: python3 flareprox.py <command> [options]\n")
+    print("  Usage: python3 flareprox.py <command> [options]\n")
     print(f"{'-' * 70}")
-    print(f"Commands:")
+    print("Commands:")
     print(f"{'-' * 70}\n")
-    print(f"  config    Show configuration help and setup")
-    print(f"  create    Create new proxy endpoints")
-    print(f"  list      List all proxy endpoints")
-    print(f"  test      Test proxy endpoints and show IP addresses")
-    print(f"  cleanup   Delete all proxy endpoints")
-    print(f"  help      Show detailed help\n")
+    print("  config    Show configuration help and setup")
+    print("  create    Create new proxy endpoints")
+    print("  list      List all proxy endpoints")
+    print("  test      Test proxy endpoints and show IP addresses")
+    print("  cleanup   Delete all proxy endpoints")
+    print("  help      Show detailed help\n")
     print(f"{'-' * 70}")
-    print(f"Examples:")
+    print("Examples:")
     print(f"{'-' * 70}\n")
-    print(f"  python3 flareprox.py config")
-    print(f"  python3 flareprox.py create --count 2")
-    print(f"  python3 flareprox.py test")
-    print(f"  python3 flareprox.py test --url https://httpbin.org/ip\n")
+    print("  python3 flareprox.py config")
+    print("  python3 flareprox.py create --count 2")
+    print("  python3 flareprox.py test")
+    print("  python3 flareprox.py test --url https://httpbin.org/ip\n")
 
 
 def show_config_help() -> None:
     """Display configuration help and interactive setup."""
     print(f"\n{'=' * 70}")
-    print(f"FlareProx Configuration")
+    print("FlareProx Configuration")
     print(f"{'=' * 70}")
 
     # Check if already configured with valid credentials
@@ -1031,66 +1086,72 @@ def show_config_help() -> None:
         if os.path.exists(config_file):
             existing_config_files.append(config_file)
             try:
-                with open(config_file, 'r') as f:
+                with open(config_file, "r") as f:
                     config_data = json.load(f)
                     cf_config = config_data.get("cloudflare", {})
                     api_token = cf_config.get("api_token", "").strip()
                     account_id = cf_config.get("account_id", "").strip()
 
                     # Check if we have actual credentials (not empty or placeholder)
-                    if (api_token and account_id and
-                        api_token not in ["", "your_cloudflare_api_token_here"] and
-                        account_id not in ["", "your_cloudflare_account_id_here"] and
-                        len(api_token) > 10 and len(account_id) > 10):
+                    if (
+                        api_token
+                        and account_id
+                        and api_token not in ["", "your_cloudflare_api_token_here"]
+                        and account_id not in ["", "your_cloudflare_account_id_here"]
+                        and len(api_token) > 10
+                        and len(account_id) > 10
+                    ):
                         valid_config_found = True
                         break
-            except (json.JSONDecodeError, IOError):
+            except json.JSONDecodeError, IOError:
                 continue
 
     if valid_config_found:
-        print(f"\n  ✓ FlareProx is already configured with valid credentials.\n")
-        print(f"  Configuration files found:")
+        print("\n  ✓ FlareProx is already configured with valid credentials.\n")
+        print("  Configuration files found:")
         for config_file in existing_config_files:
             print(f"    - {config_file}")
         print()
 
         choice = input("  Do you want to reconfigure? (y/n): ").lower().strip()
-        if choice != 'y':
+        if choice != "y":
             print()
             return
 
     elif existing_config_files:
-        print(f"\n  Configuration files exist but appear to contain placeholder values:\n")
+        print(
+            "\n  Configuration files exist but appear to contain placeholder values:\n"
+        )
         for config_file in existing_config_files:
             print(f"    - {config_file}")
         print()
 
-    print(f"  Setting up FlareProx configuration...\n")
+    print("  Setting up FlareProx configuration...\n")
 
     if setup_interactive_config():
-        print(f"  You can now use FlareProx:")
-        print(f"    python3 flareprox.py create --count 2")
-        print(f"    python3 flareprox.py test\n")
+        print("  You can now use FlareProx:")
+        print("    python3 flareprox.py create --count 2")
+        print("    python3 flareprox.py test\n")
     else:
-        print(f"\n  ✗ Configuration failed. Please try again.\n")
+        print("\n  ✗ Configuration failed. Please try again.\n")
 
 
 def show_detailed_help() -> None:
     """Display detailed help information."""
     print(f"\n{'=' * 70}")
-    print(f"FlareProx - Detailed Help")
+    print("FlareProx - Detailed Help")
     print(f"{'=' * 70}\n")
-    print(f"  FlareProx provides simple URL redirection through Cloudflare Workers.")
-    print(f"  All traffic sent to your FlareProx endpoints will be redirected to")
-    print(f"  the target URL you specify, supporting all HTTP methods.\n")
+    print("  FlareProx provides simple URL redirection through Cloudflare Workers.")
+    print("  All traffic sent to your FlareProx endpoints will be redirected to")
+    print("  the target URL you specify, supporting all HTTP methods.\n")
     print(f"{'-' * 70}")
-    print(f"Features:")
+    print("Features:")
     print(f"{'-' * 70}\n")
-    print(f"  • Support for all HTTP methods (GET, POST, PUT, DELETE, etc.)")
-    print(f"  • Automatic CORS headers")
-    print(f"  • IP masking through Cloudflare's global network")
-    print(f"  • Simple URL-based redirection")
-    print(f"  • Free tier: 100,000 requests/day")
+    print("  • Support for all HTTP methods (GET, POST, PUT, DELETE, etc.)")
+    print("  • Automatic CORS headers")
+    print("  • IP masking through Cloudflare's global network")
+    print("  • Simple URL-based redirection")
+    print("  • Free tier: 100,000 requests/day")
 
 
 def main():
@@ -1120,9 +1181,9 @@ def main():
 
     if not flareprox.is_configured:
         print(f"\n{'=' * 70}")
-        print(f"FlareProx Not Configured")
+        print("FlareProx Not Configured")
         print(f"{'=' * 70}\n")
-        print(f"  Run 'python3 flareprox.py config' to set up FlareProx\n")
+        print("  Run 'python3 flareprox.py config' to set up FlareProx\n")
         return
 
     try:
@@ -1140,10 +1201,10 @@ def main():
 
         elif args.command == "cleanup":
             print(f"\n{'=' * 70}")
-            print(f"Cleanup All FlareProx Endpoints")
+            print("Cleanup All FlareProx Endpoints")
             print(f"{'=' * 70}\n")
             confirm = input("  Delete ALL FlareProx endpoints? (y/N): ")
-            if confirm.lower() == 'y':
+            if confirm.lower() == "y":
                 flareprox.cleanup_all()
             else:
                 print("\n  Cleanup cancelled.\n")
